@@ -1,5 +1,3 @@
-# Final regenerated working app.py for Streamlit Movie Recommender with Purple Font, IMDb Links, Hover Effects & Genre Sections
-
 import streamlit as st
 import pandas as pd
 import requests
@@ -95,7 +93,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# Theme toggle and layout
+# Theme and layout
 st.set_page_config(page_title="Movie Recommendations", layout="wide")
 theme = st.sidebar.radio("Choose Theme:", ["Dark", "Light"])
 
@@ -142,7 +140,7 @@ h1, h2, h3, .stMarkdown, .stButton, .stTextInput, .stSelectbox, .stMultiSelect, 
 </style>
 """, unsafe_allow_html=True)
 
-# Trending with IMDb links
+# Trending Section
 st.markdown("<h1 style='text-align:center'>🎬 Recommending Movies for you 😉</h1>", unsafe_allow_html=True)
 st.subheader("🔥 Trending Picks")
 trending_titles = random.sample(df['movie_title'].dropna().unique().tolist(), 5)
@@ -155,8 +153,26 @@ for i, title in enumerate(trending_titles):
         if trailer:
             st.markdown(f"[▶️ Trailer]({trailer})", unsafe_allow_html=True)
 
-# Search and filters
-search_input = st.text_input("Search for a movie you like")
+# --- 🔍 Search with Suggestions ---
+st.subheader("🔎 Search for a movie")
+
+all_titles = df['movie_title'].dropna().unique().tolist()
+
+if "selected_title" not in st.session_state:
+    st.session_state.selected_title = ""
+
+search_input = st.text_input("Type a movie name:", value=st.session_state.selected_title)
+
+# Suggestions
+suggestions = [title for title in all_titles if search_input.lower() in title.lower()][:10]
+if search_input and not st.session_state.selected_title:
+    st.markdown("**Did you mean:**")
+    for suggestion in suggestions:
+        if st.button(suggestion):
+            st.session_state.selected_title = suggestion
+            st.experimental_rerun()
+
+# Filters
 genre_options = sorted(set(g for genre in df['genres'].dropna() for g in genre.split()))
 actor_set = pd.unique(df[['actor_1_name', 'actor_2_name', 'actor_3_name']].values.ravel('K'))
 actor_options = sorted([a for a in actor_set if pd.notna(a)])
@@ -164,7 +180,7 @@ selected_genres = st.sidebar.multiselect("Genres", genre_options)
 selected_actors = st.sidebar.multiselect("Actors", actor_options)
 sort_by = st.sidebar.radio("Sort by", ["Similarity", "Year"])
 
-# Log feedback
+# Feedback logger
 def log_feedback(title, feedback_text, rating_value):
     log = {
         "movie_title": title,
@@ -177,9 +193,10 @@ def log_feedback(title, feedback_text, rating_value):
 
 # Recommendations section
 if st.button("Recommend"):
-    if search_input:
+    final_input = st.session_state.selected_title or search_input
+    if final_input:
         with st.spinner("Fetching recommendations..."):
-            results = recommend(search_input, selected_genres, selected_actors, sort_by)
+            results = recommend(final_input, selected_genres, selected_actors, sort_by)
         if results:
             st.subheader("🎯 Recommendations:")
             genre_groups = {}
