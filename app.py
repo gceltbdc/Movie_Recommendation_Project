@@ -1,47 +1,42 @@
 import streamlit as st
 import pandas as pd
 from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics.pairwise import linear_kernel
+from sklearn.metrics.pairwise import cosine_similarity
 
-# Load your main dataset
+# Load dataset
 data = pd.read_csv("main_data.csv")
 
-# Preprocess: Drop rows with missing movie_title or features
-data = data.dropna(subset=['movie_title', 'genres', 'plot_keywords'])
+# Drop rows with missing important data
+data = data.dropna(subset=['movie_title', 'comb'])
 
-# Combine relevant text features
-def combine_features(row):
-    return str(row['genres']) + " " + str(row['plot_keywords'])
-
-data['combined_features'] = data.apply(combine_features, axis=1)
-
-# Vectorize using TF-IDF
+# Vectorize the 'comb' column
 tfidf = TfidfVectorizer(stop_words='english')
-tfidf_matrix = tfidf.fit_transform(data['combined_features'])
+tfidf_matrix = tfidf.fit_transform(data['comb'])
 
 # Compute cosine similarity
-cosine_sim = linear_kernel(tfidf_matrix, tfidf_matrix)
+cosine_sim = cosine_similarity(tfidf_matrix, tfidf_matrix)
 
-# Build a reverse index of movie titles
-indices = pd.Series(data.index, index=data['movie_title'].str.strip()).drop_duplicates()
+# Map movie titles to indices
+indices = pd.Series(data.index, index=data['movie_title'].str.strip().str.lower()).drop_duplicates()
 
-# Recommend function
+# Recommendation function
 def recommend(title, num_recommendations=5):
-    title = title.strip()
+    title = title.strip().lower()
     if title not in indices:
-        return ["Movie not found."]
+        return ["Movie not found. Please check the title."]
     idx = indices[title]
     sim_scores = list(enumerate(cosine_sim[idx]))
     sim_scores = sorted(sim_scores, key=lambda x: x[1], reverse=True)[1:num_recommendations + 1]
     movie_indices = [i[0] for i in sim_scores]
     return data['movie_title'].iloc[movie_indices].tolist()
 
-# ---------------- Streamlit UI ---------------- #
+# Streamlit UI
 st.title("🎬 Movie Recommendation System")
-st.write("Get movie recommendations based on genres and plot keywords.")
+st.write("Get movie recommendations based on cast, director, and genres!")
 
-movie_list = data['movie_title'].dropna().unique()
-selected_movie = st.selectbox("Choose a movie:", sorted(movie_list))
+# User input
+movie_list = sorted(data['movie_title'].dropna().unique())
+selected_movie = st.selectbox("Choose a movie:", movie_list)
 
 if st.button("Recommend"):
     recommendations = recommend(selected_movie)
