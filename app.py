@@ -12,12 +12,10 @@ TMDB_API_KEY = "f7a140679c93b137c2879b1682284343"
 df = pd.read_csv("main_data.csv")
 df = df.dropna(subset=['movie_title', 'comb'])
 
-# TF-IDF and Similarity
+# TF-IDF and Cosine Similarity
 tfidf = TfidfVectorizer(stop_words='english')
 tfidf_matrix = tfidf.fit_transform(df['comb'])
 cosine_sim = cosine_similarity(tfidf_matrix, tfidf_matrix)
-
-# Index map
 indices = pd.Series(df.index, index=df['movie_title'].str.strip().str.lower()).drop_duplicates()
 
 # TMDB fetch
@@ -33,7 +31,6 @@ def fetch_tmdb_data(title):
             release_date = result.get('release_date', '')
             year = release_date.split("-")[0] if release_date else "Unknown"
             trailer_url = None
-
             movie_id = result.get('id')
             if movie_id:
                 video_url = f"https://api.themoviedb.org/3/movie/{movie_id}/videos?api_key={TMDB_API_KEY}"
@@ -42,30 +39,24 @@ def fetch_tmdb_data(title):
                     if video['site'] == 'YouTube' and video['type'] == 'Trailer':
                         trailer_url = f"https://www.youtube.com/watch?v={video['key']}"
                         break
-
             poster_url = f"https://image.tmdb.org/t/p/w500{poster_path}" if poster_path else None
             return poster_url, year, overview, trailer_url
     return None, "Unknown", "Overview not found.", None
 
-# Recommendation logic
+# Recommender logic
 def recommend(title, genres=None, actors=None, sort_by="Similarity"):
     title = title.strip().lower()
     if title not in indices:
         return []
-
     idx = indices[title]
     sim_scores = list(enumerate(cosine_sim[idx]))
-
     sim_scores = sorted(sim_scores, key=lambda x: x[1], reverse=True)[1:50]
     results = []
-
     for i, score in sim_scores:
         movie = df.iloc[i]
         movie_title = movie['movie_title'].strip()
-
         genre_match = all(g in movie['genres'] for g in genres) if genres else True
         actor_match = any(a in str(movie[col]) for col in ['actor_1_name', 'actor_2_name', 'actor_3_name'] for a in actors) if actors else True
-
         if genre_match and actor_match:
             poster_url, year, overview, trailer_url = fetch_tmdb_data(movie_title)
             results.append({
@@ -76,42 +67,41 @@ def recommend(title, genres=None, actors=None, sort_by="Similarity"):
                 'score': score,
                 'trailer': trailer_url
             })
-
         if len(results) >= 10:
             break
-
     return sorted(results, key=lambda x: x['year'] if sort_by == "Year" else x['score'], reverse=True)
 
-# Logging user selections
-def log_selection(title, genres, actors):
+# Logging interactions
+def log_feedback(title, feedback_text, rating_value):
     log = {
         "movie_title": title,
-        "genres": ', '.join(genres) if genres else "",
-        "actors": ', '.join(actors) if actors else "",
+        "rating": rating_value,
+        "comment": feedback_text,
         "timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     }
     df_log = pd.DataFrame([log])
-    df_log.to_csv("logs.csv", mode="a", header=not pd.io.common.file_exists("logs.csv"), index=False)
+    df_log.to_csv("feedback.csv", mode="a", header=not pd.io.common.file_exists("feedback.csv"), index=False)
 
-# Streamlit UI
-st.set_page_config(page_title="🎬 Movie Recommender", layout="wide")
+# Streamlit UI setup
+st.set_page_config(page_title="🎬 Movie Recommendations", layout="wide")
 
-# Netflix-style background
+# Solid Dark Background
 st.markdown("""
     <style>
     body {
-        background-color: #111;
+        background-color: #121212;
         color: white;
     }
     .stApp {
-        background-image: url("https://www.transparenttextures.com/patterns/black-felt.png");
-        background-size: cover;
+        background-color: #121212;
+        color: white;
     }
     </style>
 """, unsafe_allow_html=True)
 
-st.title("🍿 Netflix-Style Movie Recommender")
-st.markdown("### Discover similar movies with smart filters and trailers!")
+# App Title
+st.title("🎬 Movie Recommendations")
+st.markdown("#### Discover similar movies with trailers, filters, and share your feedback!")
 
 # Autocomplete mimic
 all_titles = df['movie_title'].dropna().unique()
@@ -140,9 +130,9 @@ with col3:
 # Recommend button
 if st.button("🚀 Recommend"):
     if search_input:
-        log_selection(search_input, selected_genres, selected_actors)
         results = recommend(search_input, selected_genres, selected_actors, sort_by)
         if results:
+            st.subheader("🎯 Top Recommendations")
             for chunk in range(0, len(results), 5):
                 row = results[chunk:chunk+5]
                 cols = st.columns(len(row))
@@ -154,7 +144,14 @@ if st.button("🚀 Recommend"):
                             st.write(movie['overview'])
                         if movie['trailer']:
                             st.markdown(f"[▶️ Watch Trailer]({movie['trailer']})", unsafe_allow_html=True)
+                        # Feedback
+                        with st.expander("📝 Leave a comment / rate"):
+                            rating = st.slider(f"Rating for {movie['title']}", 0, 5, step=1, key=f"rate_{movie['title']}")
+                            comment = st.text_area(f"Comment on {movie['title']}", key=f"comment_{movie['title']}")
+                            if st.button("Submit Feedback", key=f"submit_{movie['title']}"):
+                                log_feedback(movie['title'], comment, rating)
+                                st.success("Thank you for your feedback!")
         else:
-            st.warning("No recommendations found with your filters.")
+            st.warning("No recommendations matched your filters.")
     else:
-        st.error("Please enter or select a movie title to get started.")
+        st.error("Please enter or select a movie title.")
