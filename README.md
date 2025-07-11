@@ -26,9 +26,9 @@ Live App: https://movierecommendationproject-ekzngdp62uusawuh5ouofc.streamlit.ap
 
 🛠️ Tech Stack
 Component	Tech Used
-Frontend/UI	=> Streamlit, HTML/CSS
-Backend Logic =>	Python, Pandas, Scikit-learn
-API =>	TMDB API
-ML Model	=> TF-IDF + Cosine Similarity
-Deployment =>	Streamlit Cloud
+Frontend/UI	=> Streamlit, HTML/CSS;
+Backend Logic =>	Python, Pandas, Scikit-learn;
+API =>	TMDB API;
+ML Model	=> TF-IDF + Cosine Similarity;
+Deployment =>	Streamlit Cloud;
 Data	=> main_data.csv (custom movie metadata)
