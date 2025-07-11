@@ -81,6 +81,9 @@ def recommend(title, genres=None, actors=None, sort_by="Similarity"):
 # Inject hover style & color override
 st.markdown("""
     <style>
+    body {
+        color: #a864e3;
+    }
     a {
         color: #a864e3 !important;
         text-decoration: none;
@@ -92,13 +95,13 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# Theme toggle
+# Theme toggle and layout
 st.set_page_config(page_title="Movie Recommendations", layout="wide")
 theme = st.sidebar.radio("Choose Theme:", ["Dark", "Light"])
 
 if theme == "Dark":
     bg_color = "#000"
-    text_color = "#d0aaff"
+    text_color = "#a864e3"
     card_bg = "rgba(0, 0, 0, 0.7)"
     label_color = "#d0aaff"
     sidebar_label_color = "#d0aaff"
@@ -139,15 +142,16 @@ h1, h2, h3, .stMarkdown, .stButton, .stTextInput, .stSelectbox, .stMultiSelect, 
 </style>
 """, unsafe_allow_html=True)
 
+# Trending with IMDb links
 st.markdown("<h1 style='text-align:center'>🎬 Recommending Movies for you 😉</h1>", unsafe_allow_html=True)
 st.subheader("🔥 Trending Picks")
 trending_titles = random.sample(df['movie_title'].dropna().unique().tolist(), 5)
 trending_cols = st.columns(5)
 for i, title in enumerate(trending_titles):
     with trending_cols[i]:
-        poster, year, overview, trailer, _ = fetch_tmdb_data(title)
+        poster, year, overview, trailer, imdb = fetch_tmdb_data(title)
         st.image(poster or "https://via.placeholder.com/300x450?text=No+Image", width=150)
-        st.markdown(f"**{title} ({year})**")
+        st.markdown(f"[{title} ({year})]({imdb})", unsafe_allow_html=True)
         if trailer:
             st.markdown(f"[▶️ Trailer]({trailer})", unsafe_allow_html=True)
 
@@ -160,7 +164,18 @@ selected_genres = st.sidebar.multiselect("Genres", genre_options)
 selected_actors = st.sidebar.multiselect("Actors", actor_options)
 sort_by = st.sidebar.radio("Sort by", ["Similarity", "Year"])
 
-# Recommendations
+# Log feedback
+def log_feedback(title, feedback_text, rating_value):
+    log = {
+        "movie_title": title,
+        "rating": rating_value,
+        "comment": feedback_text,
+        "timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    }
+    df_log = pd.DataFrame([log])
+    df_log.to_csv("feedback.csv", mode="a", header=not pd.io.common.file_exists("feedback.csv"), index=False)
+
+# Recommendations section
 if st.button("Recommend"):
     if search_input:
         with st.spinner("Fetching recommendations..."):
