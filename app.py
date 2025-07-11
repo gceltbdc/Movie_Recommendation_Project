@@ -1,6 +1,3 @@
-# 🔧 Final app.py with all UI fixes and safe Unicode labels
-# Make sure you have 'main_data.csv' in the same directory
-
 import streamlit as st
 import pandas as pd
 import requests
@@ -9,9 +6,10 @@ import random
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
+# TMDB API Key
 TMDB_API_KEY = "f7a140679c93b137c2879b1682284343"
 
-# Load and process data
+# Load dataset
 df = pd.read_csv("main_data.csv")
 df = df.dropna(subset=['movie_title', 'comb'])
 
@@ -21,7 +19,7 @@ tfidf_matrix = tfidf.fit_transform(df['comb'])
 cosine_sim = cosine_similarity(tfidf_matrix, tfidf_matrix)
 indices = pd.Series(df.index, index=df['movie_title'].str.strip().str.lower()).drop_duplicates()
 
-# Fetch movie data from TMDB
+# Fetch TMDB data
 def fetch_tmdb_data(title):
     url = f"https://api.themoviedb.org/3/search/movie?api_key={TMDB_API_KEY}&query={title}"
     response = requests.get(url)
@@ -46,7 +44,7 @@ def fetch_tmdb_data(title):
             return poster_url, year, overview, trailer_url
     return None, "Unknown", "Overview not found.", None
 
-# Recommend movies
+# Recommend logic
 def recommend(title, genres=None, actors=None, sort_by="Similarity"):
     title = title.strip().lower()
     if title not in indices:
@@ -74,7 +72,7 @@ def recommend(title, genres=None, actors=None, sort_by="Similarity"):
             break
     return sorted(results, key=lambda x: x['year'] if sort_by == "Year" else x['score'], reverse=True)
 
-# Log user feedback
+# Feedback logging
 def log_feedback(title, feedback_text, rating_value):
     log = {
         "movie_title": title,
@@ -85,25 +83,23 @@ def log_feedback(title, feedback_text, rating_value):
     df_log = pd.DataFrame([log])
     df_log.to_csv("feedback.csv", mode="a", header=not pd.io.common.file_exists("feedback.csv"), index=False)
 
-# Streamlit setup
+# 🎨 App Config and Style
 st.set_page_config(page_title="Movie Recommendations", layout="wide")
-theme = st.sidebar.radio("Choose Theme:", ["Dark", "Light"])
+theme = st.sidebar.radio("🌗 Theme", ["Dark", "Light"])
 
-# Style block
+# Style variables
 if theme == "Dark":
     bg_color = "#000"
     text_color = "#fff"
     card_bg = "rgba(0, 0, 0, 0.7)"
     label_color = "#d0aaff"
-    sidebar_label_color = "#d0aaff"
 else:
     bg_color = "#f5f5f5"
     text_color = "#111"
     card_bg = "#ffffff"
     label_color = "#6a1b9a"
-    sidebar_label_color = "#4b0082"
 
-# Inject custom CSS
+# Inject style
 st.markdown(f"""
     <style>
     body {{
@@ -119,6 +115,7 @@ st.markdown(f"""
         padding: 2rem;
         border-radius: 12px;
         backdrop-filter: blur(8px);
+        transition: all 0.3s ease;
     }}
     h1, h2, h3, .stMarkdown {{
         color: {text_color} !important;
@@ -127,23 +124,6 @@ st.markdown(f"""
         color: {label_color} !important;
         font-weight: bold;
     }}
-    section[data-testid="stSidebar"] label {{
-        color: {sidebar_label_color} !important;
-        font-weight: bold;
-    }}
-    .st-expanderHeader {{
-        color: white !important;
-    }}
-    .st-expanderContent, .stTextArea label, .stSlider label {{
-        color: white !important;
-    }}
-    .css-1r6slb0 {{
-        color: white !important;
-    }}
-    textarea {{
-        background-color: #222 !important;
-        color: white !important;
-    }}
     button:hover {{
         background-color: #7e57c2 !important;
         transform: scale(1.03);
@@ -151,3 +131,88 @@ st.markdown(f"""
     }}
     </style>
 """, unsafe_allow_html=True)
+
+# App Header
+st.markdown("<h1 style='text-align: center;'>🎬 Recommending Movies for you 😉</h1>", unsafe_allow_html=True)
+
+# Trending carousel
+st.subheader("🔥 Trending Picks For You")
+trending_titles = random.sample(df['movie_title'].dropna().unique().tolist(), 5)
+trending_cols = st.columns(5)
+for i, title in enumerate(trending_titles):
+    with trending_cols[i]:
+        poster, year, overview, trailer = fetch_tmdb_data(title)
+        st.image(poster or "https://via.placeholder.com/300x450?text=No+Image", width=150)
+        st.markdown(f"**{title} ({year})**")
+        if trailer:
+            st.markdown(f"[▶️ Trailer]({trailer})", unsafe_allow_html=True)
+
+
+# Search bar
+st.subheader("🎯 Search for a Movie You Like")
+search_input = st.text_input("🔍 Type a movie title")
+
+# Autocomplete mimic
+if search_input:
+    suggestions = [title for title in df['movie_title'].dropna().unique() if search_input.lower() in title.lower()]
+    if suggestions:
+        st.markdown("##### 🔎 Suggestions:")
+        for s in suggestions[:5]:
+            if st.button(f"🎬 Use: {s}"):
+                search_input = s
+
+# Sidebar Filters
+st.sidebar.markdown("## 🔧 Filters")
+genre_options = sorted(set(g for genre in df['genres'].dropna() for g in genre.split()))
+actor_set = pd.unique(df[['actor_1_name', 'actor_2_name', 'actor_3_name']].values.ravel('K'))
+actor_options = sorted([a for a in actor_set if pd.notna(a)])
+
+selected_genres = st.sidebar.multiselect("🎭 Select Genres", genre_options)
+selected_actors = st.sidebar.multiselect("🧑‍🎤 Select Actors", actor_options)
+sort_by = st.sidebar.radio("📊 Sort Recommendations By", ["Similarity", "Year"])
+
+# Recommend Button
+if st.button("🚀 Recommend"):
+    if search_input:
+        with st.spinner("🔍 Fetching personalized recommendations..."):
+            results = recommend(search_input, selected_genres, selected_actors, sort_by)
+
+        if results:
+            st.subheader("📽️ Recommendations For You:")
+            for chunk in range(0, len(results), 5):
+                row = results[chunk:chunk+5]
+                cols = st.columns(len(row))
+                for i, movie in enumerate(row):
+                    with cols[i]:
+                        st.image(movie['poster'] or "https://via.placeholder.com/300x450?text=No+Image", width=150)
+                        st.markdown(f"**{movie['title']} ({movie['year']})**")
+                        with st.expander("ℹ️ Overview"):
+                            st.write(movie['overview'])
+
+                        # Trailer
+                        if movie['trailer']:
+                            st.markdown(f"[▶️ Watch Trailer]({movie['trailer']})", unsafe_allow_html=True)
+
+                        # Share Buttons
+                        st.markdown("---")
+                        share_text = f"I recommend watching '{movie['title']}'! Check it out 🎬"
+                        twitter = f"https://twitter.com/intent/tweet?text={share_text}"
+                        whatsapp = f"https://wa.me/?text={share_text}"
+                        st.markdown(f"[📤 Share on Twitter]({twitter})", unsafe_allow_html=True)
+                        st.markdown(f"[📤 Share on WhatsApp]({whatsapp})", unsafe_allow_html=True)
+
+                        # Feedback section
+                        with st.expander("📝 Leave a comment or rating"):
+                            rating = st.slider(f"Rating for {movie['title']}", 0, 5, step=1, key=f"rate_{movie['title']}")
+                            comment = st.text_area(f"Your thoughts on {movie['title']}:", key=f"comment_{movie['title']}")
+                            if st.button("Submit Feedback", key=f"submit_{movie['title']}"):
+                                log_feedback(movie['title'], comment, rating)
+                                st.success("✅ Feedback submitted. Thank you!")
+        else:
+            st.warning("😕 No recommendations found for that movie + filters.")
+    else:
+        st.error("⚠️ Please enter a movie title first.")
+
+# Footer
+st.markdown("---")
+st.markdown("<p style='text-align:center; color:#999'>Built by Bikram • Powered by TMDB API & Streamlit</p>", unsafe_allow_html=True)
