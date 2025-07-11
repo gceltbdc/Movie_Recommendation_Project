@@ -11,87 +11,136 @@ TMDB_API_KEY = "f7a140679c93b137c2879b1682284343"
 df = pd.read_csv("main_data.csv")
 df = df.dropna(subset=['movie_title', 'comb'])
 
-# TF-IDF Vectorization
+# TF-IDF and Similarity
 tfidf = TfidfVectorizer(stop_words='english')
 tfidf_matrix = tfidf.fit_transform(df['comb'])
-
-# Cosine Similarity
 cosine_sim = cosine_similarity(tfidf_matrix, tfidf_matrix)
 
-# Movie Index Mapping
+# Index map
 indices = pd.Series(df.index, index=df['movie_title'].str.strip().str.lower()).drop_duplicates()
 
-# Fetch movie poster and release year from TMDB
+# TMDB API call
 def fetch_tmdb_data(title):
     url = f"https://api.themoviedb.org/3/search/movie?api_key={TMDB_API_KEY}&query={title}"
     response = requests.get(url)
     if response.status_code == 200:
         data = response.json()
         if data['results']:
-            poster_path = data['results'][0].get('poster_path')
-            release_date = data['results'][0].get('release_date', '')
+            result = data['results'][0]
+            poster_path = result.get('poster_path')
+            overview = result.get('overview', 'No overview available.')
+            release_date = result.get('release_date', '')
             year = release_date.split("-")[0] if release_date else "Unknown"
-            poster_url = f"https://image.tmdb.org/t/p/w500{poster_path}" if poster_path else None
-            return poster_url, year
-    return None, "Unknown"
+            trailer_url = None
 
-# Recommendation Logic
-def recommend(title, selected_genre=None, selected_actor=None):
+            movie_id = result.get('id')
+            if movie_id:
+                video_url = f"https://api.themoviedb.org/3/movie/{movie_id}/videos?api_key={TMDB_API_KEY}"
+                video_response = requests.get(video_url).json()
+                for video in video_response.get('results', []):
+                    if video['site'] == 'YouTube' and video['type'] == 'Trailer':
+                        trailer_url = f"https://www.youtube.com/watch?v={video['key']}"
+                        break
+
+            poster_url = f"https://image.tmdb.org/t/p/w500{poster_path}" if poster_path else None
+            return poster_url, year, overview, trailer_url
+    return None, "Unknown", "Overview not found.", None
+
+# Recommend function
+def recommend(title, genres=None, actors=None, sort_by="Similarity"):
     title = title.strip().lower()
     if title not in indices:
         return []
 
     idx = indices[title]
     sim_scores = list(enumerate(cosine_sim[idx]))
-    sim_scores = sorted(sim_scores, key=lambda x: x[1], reverse=True)[1:21]
 
-    recommended_movies = []
-    for i, _ in sim_scores:
+    sim_scores = sorted(sim_scores, key=lambda x: x[1], reverse=True)[1:50]
+    results = []
+
+    for i, score in sim_scores:
         movie = df.iloc[i]
         movie_title = movie['movie_title'].strip()
-        genre_match = selected_genre in movie['genres'] if selected_genre else True
-        actor_match = any(selected_actor in str(movie[col]) for col in ['actor_1_name', 'actor_2_name', 'actor_3_name']) if selected_actor else True
+
+        genre_match = all(g in movie['genres'] for g in genres) if genres else True
+        actor_match = any(a in str(movie[col]) for col in ['actor_1_name', 'actor_2_name', 'actor_3_name'] for a in actors) if actors else True
 
         if genre_match and actor_match:
-            poster_url, year = fetch_tmdb_data(movie_title)
-            recommended_movies.append((movie_title, poster_url, year))
-        if len(recommended_movies) >= 5:
+            poster_url, year, overview, trailer_url = fetch_tmdb_data(movie_title)
+            results.append({
+                'title': movie_title,
+                'poster': poster_url,
+                'year': year,
+                'overview': overview,
+                'score': score,
+                'trailer': trailer_url
+            })
+
+        if len(results) >= 10:
             break
 
-    return recommended_movies
+    return sorted(results, key=lambda x: x['year'] if sort_by == "Year" else x['score'], reverse=True)
 
-# ---------------- UI ----------------
+# ----- STREAMLIT UI -----
 st.set_page_config(page_title="🎬 Movie Recommender", layout="wide")
-st.title("🎬 Smart Movie Recommender")
-st.markdown("Get personalized movie recommendations with posters, genre & actor filters!")
 
-# Search Input
-movie_input = st.text_input("Enter a movie name", "")
+# Custom CSS for dark OTT background
+st.markdown("""
+    <style>
+    body {
+        background-color: #111;
+        color: white;
+    }
+    .stApp {
+        background-image: url("https://www.transparenttextures.com/patterns/black-felt.png");
+        background-size: cover;
+    }
+    .css-1v0mbdj, .css-1y4p8pa {
+        color: white;
+    }
+    .stSelectbox > div > div {
+        color: black;
+    }
+    </style>
+""", unsafe_allow_html=True)
 
-# Optional filters
-genre_options = sorted(set(g for genre in df['genres'] for g in genre.split()))
-actor_options = sorted(set(df['actor_1_name'].dropna().unique()) | set(df['actor_2_name'].dropna().unique()) | set(df['actor_3_name'].dropna().unique()))
+st.title("🍿 Netflix-Style Movie Recommender")
+st.markdown("### Get smart recommendations with trailers, posters, and overview!")
 
-col1, col2 = st.columns(2)
+movie_input = st.text_input("🎬 Enter a movie name", "")
+
+# Multi-select filters
+col1, col2, col3 = st.columns([3, 3, 2])
+
 with col1:
-    selected_genre = st.selectbox("Filter by Genre (Optional)", [""] + genre_options)
-    selected_genre = selected_genre if selected_genre else None
-with col2:
-    selected_actor = st.selectbox("Filter by Actor (Optional)", [""] + actor_options)
-    selected_actor = selected_actor if selected_actor else None
+    genre_set = sorted(set(g for genre in df['genres'].dropna() for g in genre.split()))
+    selected_genres = st.multiselect("🎭 Filter by Genres", genre_set)
 
-# Recommend Button
-if st.button("Recommend"):
+with col2:
+    actor_set = pd.unique(df[['actor_1_name', 'actor_2_name', 'actor_3_name']].values.ravel('K'))
+    actor_set = sorted([a for a in actor_set if pd.notna(a)])
+    selected_actors = st.multiselect("🧑‍🎤 Filter by Actors", actor_set)
+
+with col3:
+    sort_by = st.radio("📊 Sort by", ["Similarity", "Year"])
+
+# Recommend
+if st.button("🚀 Recommend"):
     if movie_input:
-        recommendations = recommend(movie_input, selected_genre, selected_actor)
-        if recommendations:
-            st.subheader("Top Recommendations:")
-            cols = st.columns(5)
-            for i, (title, poster_url, year) in enumerate(recommendations):
-                with cols[i % 5]:
-                    st.image(poster_url or "https://via.placeholder.com/300x450?text=No+Image", width=150)
-                    st.caption(f"**{title}** ({year})")
+        results = recommend(movie_input, selected_genres, selected_actors, sort_by)
+        if results:
+            for chunk in range(0, len(results), 5):
+                row = results[chunk:chunk+5]
+                cols = st.columns(len(row))
+                for i, movie in enumerate(row):
+                    with cols[i]:
+                        st.image(movie['poster'] or "https://via.placeholder.com/300x450?text=No+Image", width=150)
+                        st.markdown(f"**{movie['title']} ({movie['year']})**")
+                        with st.expander("ℹ️ Overview"):
+                            st.write(movie['overview'])
+                        if movie['trailer']:
+                            st.markdown(f"[▶️ Watch Trailer]({movie['trailer']})", unsafe_allow_html=True)
         else:
-            st.warning("No recommendations found for your filters.")
+            st.warning("No recommendations found with those filters.")
     else:
-        st.error("Please enter a movie name.")
+        st.error("Please enter a movie title to get started.")
