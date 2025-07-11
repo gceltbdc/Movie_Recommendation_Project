@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import requests
+import datetime
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
@@ -19,7 +20,7 @@ cosine_sim = cosine_similarity(tfidf_matrix, tfidf_matrix)
 # Index map
 indices = pd.Series(df.index, index=df['movie_title'].str.strip().str.lower()).drop_duplicates()
 
-# TMDB API call
+# TMDB fetch
 def fetch_tmdb_data(title):
     url = f"https://api.themoviedb.org/3/search/movie?api_key={TMDB_API_KEY}&query={title}"
     response = requests.get(url)
@@ -46,7 +47,7 @@ def fetch_tmdb_data(title):
             return poster_url, year, overview, trailer_url
     return None, "Unknown", "Overview not found.", None
 
-# Recommend function
+# Recommendation logic
 def recommend(title, genres=None, actors=None, sort_by="Similarity"):
     title = title.strip().lower()
     if title not in indices:
@@ -81,10 +82,21 @@ def recommend(title, genres=None, actors=None, sort_by="Similarity"):
 
     return sorted(results, key=lambda x: x['year'] if sort_by == "Year" else x['score'], reverse=True)
 
-# ----- STREAMLIT UI -----
+# Logging user selections
+def log_selection(title, genres, actors):
+    log = {
+        "movie_title": title,
+        "genres": ', '.join(genres) if genres else "",
+        "actors": ', '.join(actors) if actors else "",
+        "timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    }
+    df_log = pd.DataFrame([log])
+    df_log.to_csv("logs.csv", mode="a", header=not pd.io.common.file_exists("logs.csv"), index=False)
+
+# Streamlit UI
 st.set_page_config(page_title="🎬 Movie Recommender", layout="wide")
 
-# Custom CSS for dark OTT background
+# Netflix-style background
 st.markdown("""
     <style>
     body {
@@ -95,39 +107,41 @@ st.markdown("""
         background-image: url("https://www.transparenttextures.com/patterns/black-felt.png");
         background-size: cover;
     }
-    .css-1v0mbdj, .css-1y4p8pa {
-        color: white;
-    }
-    .stSelectbox > div > div {
-        color: black;
-    }
     </style>
 """, unsafe_allow_html=True)
 
 st.title("🍿 Netflix-Style Movie Recommender")
-st.markdown("### Get smart recommendations with trailers, posters, and overview!")
+st.markdown("### Discover similar movies with smart filters and trailers!")
 
-movie_input = st.text_input("🎬 Enter a movie name", "")
+# Autocomplete mimic
+all_titles = df['movie_title'].dropna().unique()
+search_input = st.text_input("🔍 Type a movie title")
 
-# Multi-select filters
+if search_input:
+    suggestions = [title for title in all_titles if search_input.lower() in title.lower()]
+    if suggestions:
+        st.markdown("#### Suggestions:")
+        for s in suggestions[:5]:
+            if st.button(f"🎬 Use: {s}"):
+                search_input = s
+
+# Filters
 col1, col2, col3 = st.columns([3, 3, 2])
-
 with col1:
     genre_set = sorted(set(g for genre in df['genres'].dropna() for g in genre.split()))
     selected_genres = st.multiselect("🎭 Filter by Genres", genre_set)
-
 with col2:
     actor_set = pd.unique(df[['actor_1_name', 'actor_2_name', 'actor_3_name']].values.ravel('K'))
     actor_set = sorted([a for a in actor_set if pd.notna(a)])
     selected_actors = st.multiselect("🧑‍🎤 Filter by Actors", actor_set)
-
 with col3:
     sort_by = st.radio("📊 Sort by", ["Similarity", "Year"])
 
-# Recommend
+# Recommend button
 if st.button("🚀 Recommend"):
-    if movie_input:
-        results = recommend(movie_input, selected_genres, selected_actors, sort_by)
+    if search_input:
+        log_selection(search_input, selected_genres, selected_actors)
+        results = recommend(search_input, selected_genres, selected_actors, sort_by)
         if results:
             for chunk in range(0, len(results), 5):
                 row = results[chunk:chunk+5]
@@ -141,6 +155,6 @@ if st.button("🚀 Recommend"):
                         if movie['trailer']:
                             st.markdown(f"[▶️ Watch Trailer]({movie['trailer']})", unsafe_allow_html=True)
         else:
-            st.warning("No recommendations found with those filters.")
+            st.warning("No recommendations found with your filters.")
     else:
-        st.error("Please enter a movie title to get started.")
+        st.error("Please enter or select a movie title to get started.")
