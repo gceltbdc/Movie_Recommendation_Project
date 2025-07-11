@@ -1,4 +1,4 @@
-# 🔧 Final app.py with all UI fixes, expanders styled white
+# 🔧 Final app.py with all UI fixes and safe Unicode labels
 # Make sure you have 'main_data.csv' in the same directory
 
 import streamlit as st
@@ -87,7 +87,7 @@ def log_feedback(title, feedback_text, rating_value):
 
 # Streamlit setup
 st.set_page_config(page_title="Movie Recommendations", layout="wide")
-theme = st.sidebar.radio("\ud83c\udf17 Theme", ["Dark", "Light"])
+theme = st.sidebar.radio("Choose Theme:", ["Dark", "Light"])
 
 # Style block
 if theme == "Dark":
@@ -101,7 +101,7 @@ else:
     text_color = "#111"
     card_bg = "#ffffff"
     label_color = "#6a1b9a"
-    sidebar_label_color = "#4b0082"  # Dark purple for light background
+    sidebar_label_color = "#4b0082"
 
 # Inject custom CSS
 st.markdown(f"""
