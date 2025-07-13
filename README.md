@@ -1,4 +1,5 @@
 **Description**
+
 🎬 Movie Recommendation System
 A Netflix-style web application that recommends movies based on genres, keywords, and cast. Built with Streamlit and Python, it features real-time poster/trailer fetching, multi-filter options, a trending carousel, and social media sharing – all wrapped in a sleek, OTT-style UI.
 
